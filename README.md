@@ -6,3 +6,5 @@ The dataset and surveys used in this project will be uplodaded after gaining per
 The Rmd file included can be used to reproduce all results for my thesis.
 
 Methods being used in this code: Second-order Multilevel Polynomial Regression, Stepwise Regression Analysis, Confirmatory Factor Analysis, Exploratory Factor Analysis, Moderation Analysis, Single Slope Analysis. 
+
+If you have any question/concerns, contact tzz5177@psu.edu 🐈‍⬛
