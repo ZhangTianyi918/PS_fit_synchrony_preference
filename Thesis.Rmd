@@ -1,0 +1,740 @@
+---
+title: "Thesis analysis"
+author: "Zhang Tianyi"
+output: html_document
+---
+
+```{r Packages, include = FALSE}
+library(pacman)
+??pacman
+pacman::p_load("haven", "psych", "ggplot2", "car", "tidyverse", "mice", "ltm", "lavaan",
+              "dplyr", "stdmod", "readr", "lattice", "RSA", "Hmisc", "EFAtools", "MBESS", 
+              "knitr")
+
+```
+
+```{r Raw Cleaning & Screening, include = FALSE}
+
+employee <- read_csv("employee.csv")
+supervisor <- read_csv("supervisor.csv")
+
+# Deleting Chinese columns
+supervisor <- supervisor[, -5]
+supervisor <- supervisor[, -7]
+
+# Synchrony Preference Employee
+sp_employee_old <- employee[8:11]
+psych::alpha(sp_employee_old)
+# The alpha with all four items are too low (.48), I decided to drop item 11 to raise the alpha to .65. 
+sp_employee <- employee[8:10]
+psych::alpha(sp_employee)
+# Alpha = .65 for employee sp
+# Be sure to talk about this in the discussion section 
+# Could have been the cultural difference - hiracal problem, make note of the potential negativity in the chinese version for item 11 - offer rationale when mentioning this being dropped 
+# Look at the item being dropped
+
+# Synchrony Preference Supervisor 
+sp_supervisor_old <- supervisor[7:10]
+psych::alpha(sp_supervisor_old)
+# Dropping item 11, alpha changed from .68 to .88
+sp_supervisor <- supervisor[7:9]
+psych::alpha(sp_supervisor)
+# Alpha = .88 for supervisor sp
+
+# Temporal Self-Efficacy
+tse_employee <- employee[92:95]
+psych::alpha(tse_employee)
+# Alpha = .92 
+
+# Time Pressure 
+tp_employee <- employee[107:110]
+psych::alpha(tp_employee)
+# Alpha = .83
+
+# Coordinative Complexity 
+cc_employee <- employee[105:106]
+psych::alpha(cc_employee)
+# Alpha = .71
+
+# Temporal Ambiguity 
+ta_employee <- employee[130:134]
+psych::alpha(ta_employee)
+# Alpha = .86
+
+# Demographic information extraction
+d_employee <- employee[1:7]
+d_supervisor <-supervisor[1:6]
+
+# Binding all variables of interest 
+df_employee <- cbind(d_employee, sp_employee, 
+                     tse_employee, tp_employee, 
+                     cc_employee, ta_employee)
+df_supervisor <- cbind(d_supervisor, sp_supervisor)
+df <- merge(df_employee, df_supervisor, by = "super_id")
+
+# Creating composits 
+df$sp_employee <- rowMeans(df[, 8:10])
+df$tse <- rowMeans(df[,11:14])
+df$tp <- rowMeans(df[,15:18])
+df$cc <- rowMeans(df[,19:20])
+df$ta <- rowMeans(df[,21:25])
+df$sp_supervisor <- rowMeans(df[,31:33])
+
+# Checking missing values
+if (any(is.na(df))) {
+  print("Missing values are present in the dataset.")
+} else {
+  print("No missing values in the dataset.")
+}
+
+# Checking distribution
+summary(df[, 34:39])
+
+write.csv(df, "maserthesis_df.csv")
+
+```
+
+```{r Descriptives}
+df <- read.csv("maserthesis_df.csv")
+df <- as.data.frame(lapply(df, function(x) replace(x, x == -99, NA)))
+
+visee_demo <- df[4:6]
+visor_demo <- df[27:29]
+variables <- df[,35:40]
+variables_m <- cbind(visee_demo, visor_demo, variables)
+matrix <- as.matrix(variables_m)
+cor_matrix <- rcorr(matrix)
+cor_matrix_r <- cor_matrix$r
+simple <- round(cor_matrix_r, digits = 2)
+
+# Correlation Matrix
+cor_matrix_p <- cor_matrix$P
+simplep <- round(cor_matrix_p, digits = 2)
+cor_matrix_p
+colMeans(variables_m, na.rm = TRUE)
+apply(variables_m, 2, FUN = sd, na.rm = TRUE)
+sd(df$sex.x)
+```
+
+```{r Factor Analysis}
+supervisee <- df[,9:26]
+supervisor <- df[,32:34]
+
+# EFA 
+cfadf <- cbind(supervisee, supervisor)
+cfadf_m <- as.matrix(supervisee)
+cfadf_c <- cor(supervisee)
+num_factors <- 5
+efa_result <- fa(supervisee, nfactors = 5)
+efa_result
+scree(cfadf_c)
+fa.parallel(cfadf_m)
+
+kmo_result <- KMO(cfadf_c)
+kmo_result 
+
+# .826 KMO 
+
+# Perform Bartlett's test
+?cortest.bartlett
+bartlett_result <- cortest.bartlett(cfadf_c, n = 365)
+bartlett_result
+# Bartlett_result is significant, p value is 0 
+
+# Checking stats of EFA
+efa_result$loadings
+efa_result$communality
+efa_result$values
+efa_result$Vaccounted
+efa_result$fit
+summary(efa_result)
+
+
+```
+
+```{r Factor Analysis}
+# CFA
+# Put all employee one together then run one big model 
+# Try the five factor CFA and see what it looks like
+# < .5 >.95
+# as long at the five factor model is better than other models 
+# CFA DF
+supervisee <- df[,9:26]
+supervisor <- df[,32:34]
+cfadf <- cbind(supervisee, supervisor)
+# Employee Synchrony Preference 
+f1  <- ' f1  =~ item8.x + item9.x + item10.x'
+cfaesp <- cfa(f1, data = cfadf)
+summary(cfaesp)
+
+# Temporal self-efficacy
+f2 <- 'f2 =~ item80 + item81 + item82 + item83'
+cfatse <- cfa(f2, data = cfadf, std.lv=TRUE)
+summary(cfatse, fit.measures=TRUE, standardized=TRUE)
+
+# Time Pressure
+f3 <- 'f3 =~ item92 + item93 + item94 + item95'
+cfatp <- cfa(f3, data = cfadf)
+summary(cfatp, fit.measures=TRUE, standardized=TRUE)
+
+# Coordinative Complexity
+f4 <- 'f4 =~ a*item90 + a*item91'
+cfacc <- cfa(f4, data = cfadf, std.lv=TRUE)
+summary(cfacc)
+
+# Temporal Ambiguity
+f5 <- 'f5 =~ item115 +item116 + item117 + item118 + item119'
+cfata <- cfa(f5, data = cfadf, std.lv=TRUE)
+summary(cfata, fit.measures=TRUE, standardized=TRUE)
+
+# Supervisee Survey
+# Five-factor
+f6 <- 'f1  =~ item8.x + item9.x + item10.x
+       f2 =~ item80 + item81 + item82 + item83
+        f3 =~ item92 + item93 + item94 + item95
+        f4 =~ a*item90 + a*item91
+        f5 =~ item115 +item116 + item117 + item118 + item119'
+
+cfabig <- cfa(f6, data = cfadf)
+summary(cfabig, fit.measures = TRUE)
+
+# One-factor 
+f7 <- 'f1 =~ item8.x + item9.x + item10.x + item80 + item81 
+       + item82 + item83 + item92 + item93 + item94 + item95    
+       +item90 + item91 + item115 +item116 + item117 + item118 
+       + item119'
+
+cfa1 <- cfa(f7, data = cfadf)
+summary(cfa1, fit.measures = TRUE)
+
+# Three-Factor 
+f8 <- 'f1 =~ item8.x + item9.x + item10.x + 
+       item92 + item93 + item94 + item95
+       f2 =~ +item90 + item91 + item115 +item116 + item117 + item118 
+       + item119
+       f3 =~ item80 + item81 + item82 + item83'
+
+cfa3 <- cfa(f8, data = cfadf)
+summary(cfa3, fit.measures = TRUE)
+
+anova(cfa3, cfabig)
+anova(cfa1, cfabig)
+
+# Supervisor Synchrony Preference
+f7 <- 'f7 =~ item8.y + item9.y + item10.y'
+cfassp <- cfa(f7, data = cfadf)
+summary(cfassp, fit.measures = TRUE)
+```
+
+```{r Polynomial Regression Screening}
+
+# Distribution Check pre-analysis (Shanock, 2010)
+
+mean_sp_supervisor <- mean(df$sp_supervisor)
+sd_sp_supervisor <- sd(df$sp_supervisor)
+mean_sp_employee <- mean(df$sp_employee)
+
+df$meancsp <- df$sp_employee - mean_sp_employee
+df$meancem <- df$sp_supervisor - mean_sp_supervisor
+  
+sd_sp_employee <- sd(df$sp_employee)
+threshold_discrepancy <- 0.5 * sd_sp_supervisor
+df$discrepant <- abs(df$sp_supervisor - df$sp_employee) > threshold_discrepancy
+total_rows <- nrow(df)
+in_agreement_percentage <- 100 * sum(!df$discrepant) / total_rows
+discrepant_percentage <- 100 * sum(df$discrepant) / total_rows
+
+cat("Percentage of 'In Agreement' values:", in_agreement_percentage, "%\n")
+cat("Percentage of 'Discrepant' values:", discrepant_percentage, "%\n")
+# 24.93% in agreement and 75.07% are discrepant.
+
+```
+
+```{r Polynomial Regression V1}
+
+# V1 Mid point center constructs as suggested by Edwards, 1994
+# Non-significant
+
+df$csp_employee <- df$sp_employee - 4
+df$csp_supervisor <-df$sp_supervisor - 4
+df$xsquared = df$csp_employee ^ 2
+df$xy = df$csp_employee * df$csp_supervisor
+df$ysquared = df$csp_supervisor ^ 2
+polymodel <- lm(tse ~ csp_employee + csp_supervisor + 
+                  xy + ysquared + xsquared, data = df)
+
+summary(polymodel)
+vcov(polymodel)
+
+# Plot Response Surface figure 
+plot1 <- plotRSA(b0 = 3.581567, x = -0.0035184801, y = -0.0062532656, 
+        x2 = -0.0002829460, y2 = 0.0009820412, xy = 0.0019795575, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot1
+
+```
+
+```{r Polynomial Regression V2}
+
+# Mean centering 
+# a1 & a3 significant
+
+df$meancem <- df$sp_employee - mean_sp_employee
+df$meancsp <- df$sp_supervisor - mean_sp_supervisor
+df$xsquared2 = df$meancem ^ 2
+df$xy2 = df$meancem * df$meancsp
+df$ysquared2 = df$meancsp ^ 2
+
+polymodel2 <- lm(tse ~ meancem + meancsp + xy2 + 
+                 xsquared2 + ysquared2, data = df)
+
+vcov(polymodel2)
+summary(polymodel2)
+
+# Plot Response Surface figure 
+plot2 <- plotRSA(b0 = 3.699957, x = 0.237527, y = -0.052424, 
+        x2 = 0.053201, y2 = -0.002152, xy = -0.021663, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot2
+```
+
+```{r Polynomial Regression V3}
+# Multilevel Pooled-within Centering following (Zhang, Wang, & Shi, 2012)
+# No control variable added
+# a1, a3 & a4 significant
+
+df <- df %>%
+  group_by(super_id) %>%
+  mutate(pc_sp_employee = sp_employee - mean(sp_employee))
+
+df$csp_supervisor
+
+df$xsquared3 = df$pc_sp_employee ^ 2
+df$xy3 = df$pc_sp_employee * df$meancsp
+df$ysquared3 = df$meancsp ^ 2
+
+df$xy3.1 = df$pc_sp_employee * df$csp_supervisor
+df$ysquared3.1 = df$csp_supervisor ^ 2
+
+polymodel3 <- lm(tse ~ pc_sp_employee + meancsp + xy3 + 
+                 xsquared3 + ysquared3, data = df)
+
+vcov(polymodel3)
+summary(polymodel3)
+
+# Plot Response Surface figure 
+plot3 <- plotRSA(b0 = 3.652728, x = 0.254780, y = -0.017310, 
+        x2 = 0.079028, y2 = 0.036477, xy = -0.004946, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot3
+
+# Congruence effect (significant a1 and non-significant a2)
+# Significant a1 (.24): you can predict supervisee temporal self-efficacy when supervisor and supervisee has a synchrony preference congruence. A positive a1 indicates that the predictive effect is positive. 
+# Insignificant a2 (.11): the predictive effect between congruence and supervisee temporal self-efficacy is linear. 
+
+# Incongruence effect (significant a3 and significant a4)
+# Significant a3 (.27): you can predict supervisee temporal self-efficacy when supervisor and supervisee has a synchrony preference incongruence. A positive a3 indicates that the predictive effect is when the incongruence is calculated when x is bigger than y. 
+# Significant a4 (.12): as supervisee's synchrony preference increases, the speed of supervisee temporal self-efficacy improves much faster than when supervisor synchrony preference increases. 
+
+# Overall, in absolute values (.24 vs. .27) the incongruence predicts more compared to the congruence situation, yet I did not test the statistical significance of it. Only conclusion is that they are both positive and significant. 
+
+```
+
+```{r Polynomial Regression Control1}
+
+# Multilevel Pooled-within Centering following (Zhang, Wang, & Shi, 2012)
+# significant a1 and a2 
+df <- df %>%
+  group_by(super_id) %>%
+  mutate(pc_sp_employee = sp_employee - mean(sp_employee))
+
+df$xsquared4 = df$pc_sp_employee ^ 2
+df$xy4 = df$pc_sp_employee * df$meancsp
+df$ysquared4 = df$meancsp ^ 2
+
+polymodel4 <- lm(tse ~ pc_sp_employee + meancsp + xy4 + 
+                 xsquared4 + ysquared4 + age.x + age.y, data = df)
+
+vcov(polymodel4)
+summary(polymodel4)
+
+# Plot Response Surface figure 
+plot4 <- plotRSA(b0 = 2.95853, x = 0.080983, y = 0.182411, 
+        x2 = 0.081094, y2 = 0.002055, xy = -0.00688, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot4
+
+```
+
+```{r Polynomial Control2}
+# Multilevel Pooled-within Centering following (Zhang, Wang, & Shi, 2012)
+# significant a1 and a2 
+
+polymodel5 <- lm(tse ~ pc_sp_employee + meancsp + xy4 + 
+                 xsquared4 + ysquared4 + age.x + age.y + job_hour,
+                 data = df)
+
+vcov(polymodel5)
+summary(polymodel5)
+
+# Plot Response Surface figure 
+plot5 <- plotRSA(b0 = 3.361672, x = 0.099866, y = 0.150462, 
+        x2 = 0.079551, y2 = 0.007841, xy = -0.005508, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot5
+```
+
+```{r Polynomial Control3}
+# Age and gender of both parties, job hour of the supervisee 
+
+polymodel6 <- lm(tse ~ pc_sp_employee + csp_supervisor + xy3.1 + 
+                 xsquared3 + ysquared3.1 + age.x + age.y + job_hour +
+                 sex.x + sex.y, 
+                 data = df)
+
+summary(polymodel6)
+
+plot6 <- plotRSA(b0 = 3.434122, x = 0.106167, y = 0.144757, 
+        x2 = 0.129099, y2 = 0.048020, xy =  -0.088748, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot6
+
+vcov(polymodel6)
+```
+
+```{r polynomial 7 hopefully this is the last one}
+# job hour + gender + age of supervisee
+# significant positive a3 and a4
+df$csp_supervisor <-df$sp_supervisor - 4
+
+
+df <- df %>%
+  group_by(super_id) %>%
+  mutate(pc_sp_employee = sp_employee - mean(sp_employee))
+
+df$xsquared3 = df$pc_sp_employee ^ 2
+df$xy3.1 = df$pc_sp_employee * df$csp_supervisor
+df$ysquared3.1 = df$csp_supervisor ^ 2
+
+plain <- lm(tse ~ job_hour + sex.x + age.x, data = df)
+pms <- summary(plain)
+
+polymed <- lm(tp ~ pc_sp_employee + csp_supervisor + xy3.1 + 
+                 xsquared3 + ysquared3.1 + job_hour + sex.x + age.x, 
+                 data = df)
+
+summary(polymed)
+
+polymodel7 <- lm(tse ~ pc_sp_employee + csp_supervisor + xy3.1 + 
+                 xsquared3 + ysquared3.1 + job_hour + sex.x + age.x, 
+                 data = df)
+
+summary(polymodel7)
+m7s$r.squared
+pms$r.squared
+vcov(polymodel7)
+
+plot7 <- plotRSA(b0 = 3.962726, x = 0.264341, y = -0.105527, 
+        x2 = 0.085776, y2 = 0.024204, xy =  -0.008717, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot7
+anova(plain, polymodel7)
+
+plotmed <- plotRSA(b0 = 3.430580, x = -0.373321, y = -0.037152 , 
+        x2 = 0.046249, y2 = -0.013135, xy =  0.092460, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Time Pressure",
+        surface = "predict")
+
+plotmed
+summary(polymed)
+vcov(polymed)
+
+vcov(polymodel6)
+```
+
+```{r Polynomial 8}
+# Age and gender of both parties, job hour of the supervisee 
+# significant positive a1 and a2 
+# Look into age & efficacy BECKER 
+
+
+polymodel8 <- lm(tse ~ pc_sp_employee + meancsp + xy3 + 
+                 xsquared3 + ysquared3 + job_hour, 
+                 data = df)
+
+summary(polymodel8)
+
+vcov(polymodel8)
+
+plot6 <- plotRSA(b0 = 4.040751, x = 0.127321, y = 0.116004, 
+        x2 = 0.130577, y2 = 0.055306, xy =  -0.09509, 
+        xlab = "Supervisee Synchrony Prefernce", 
+        ylab = "Supervisor Synchrony Preference", 
+        zlab = "Supervisee Temporal Self-efficacy",
+        surface = "predict")
+
+plot6
+
+vcov(polymodel6)
+```
+
+```{r Mediation Testing}
+
+# Calculating Block Variable (with data from V3 & V4)
+
+df$block =  3.962726 + 0.264341 * df$pc_sp_employee - 0.105527*df$csp_supervisor -
+            0.008717 * df$xy3.1 +
+            0.085776 * df$xsquared3 +
+            0.024204 * df$ysquared3.1
+
+
+modmed <- "# a path
+         tse ~ a * block
+
+         # b path
+         tp ~ b * tse
+
+         # c prime path 
+         tp ~ cp * block
+
+         # indirect and total effects
+         ab := a * b
+         total := cp + ab"
+
+set.seed(0918)
+mediation <- sem(modmed, data = df, se = "bootstrap", bootstrap = 10000)
+summary(mediation, standardized = TRUE)
+
+
+path.a <- lm(tse ~ block, data = df)
+path.b <- lm(tp ~ block + tse, data = df)
+
+
+coef(path.a)
+patha  = 1.01
+pathb = -.18
+pathc = patha * pathb
+
+coef(path.b)
+
+coef_b <- -0.499078
+
+
+
+summary(path.b)
+coef(path.b)[2]
+coef(path.a)[2]*coef(path.b)[2]
+
+
+# path a coef is 0.157 and path b coef is -0.6. 
+coef_a <- coef(path.a)[2]
+coef_b <- coef(path.b)[2]
+
+coef_a * coef_b
+# Original data and coefficients
+original_data <- df  # Your original dataset
+a_coefficient <- coef(path.a)[2]   # Coefficient for path 'a'
+b_coefficient <- coef(path.b)[2]   # Coefficient for path 'b'
+
+# Number of bootstrap samples
+num_samples <- 10000
+
+# Initialize vectors to store bootstrapped coefficients
+bootstrapped_a <- numeric(num_samples)
+bootstrapped_b <- numeric(num_samples)
+
+# Perform bootstrapping
+for (i in 1:num_samples) {
+  # Resample with replacement
+  resampled_data <- df[sample(nrow(df), replace = TRUE), ]
+  
+  # Perform analysis on the resampled data
+  path_a <- lm(block ~ tse, data = resampled_data)
+  coef_a_resampled <- coef(path_a)[2]
+  
+  path_b <- lm(tp ~ block + tse, 
+               data = resampled_data)
+  coef_b_resampled <- coef(path_b)[2]
+  
+  # Store bootstrapped coefficients
+  bootstrapped_a[i] <- coef_a_resampled
+  bootstrapped_b[i] <- coef_b_resampled
+}
+
+# Calculate indirect effects for each bootstrap sample
+bootstrapped_indirect_effects <- bootstrapped_a * bootstrapped_b
+
+# Calculate bias-corrected confidence intervals
+sorted_indirect_effects <- sort(bootstrapped_indirect_effects)
+lower_percentile <- 2.5  # 95% confidence interval
+upper_percentile <- 97.5
+lower_bound <- quantile(sorted_indirect_effects, lower_percentile / 100)
+upper_bound <- quantile(sorted_indirect_effects, upper_percentile / 100)
+
+# Print results
+cat("Bias-corrected CI lower bound:", lower_bound, "\n")
+cat("Bias-corrected CI upper bound:", upper_bound, "\n")
+
+
+# Bias-corrected CI lower bound: -0.1793608 
+# Bias-corrected CI upper bound: -0.02153441
+# My number is -0.1818
+# Insignificant mediation 
+
+```
+
+```{r Moderation Testing}
+
+# Testing Moderation 
+polymodel3.1 <- lm(tp ~ pc_sp_employee + csp_supervisor + xy3.1 + 
+                 xsquared3 + ysquared3.1 + job_hour + sex.x + age.x +  
+                 tse + tse*cc + tse*ta, data = df)
+
+plain <- lm(tp ~ sex.x + age.x + job_hour, data = df)
+model1 <- lm(tp ~ sex.x + age.x + job_hour + block + tse, data = df)
+model2 <- lm(tp ~ sex.x + age.x + job_hour + block + tse + cc + ta, data = df)
+model3 <- lm(tp ~ sex.x + age.x + job_hour + block + tse + cc*tse + ta*tse, data = df)
+
+summary(plain)
+summary(model1)
+summary(model2)
+summary(model3)
+
+
+
+
+```
+
+```{r Moderation Plotting V1}
+# V3 
+# Coordinative Complexity
+plotmod(model3,
+        tse,
+        cc,
+        x_label = "Temporal Self-Efficacy",
+        w_label = "Coordinative Complexity",
+        y_label = "Time Pressure")
+# Counter intuitive 
+# Test *simple slopes* of these moderation 
+
+
+# Temporal Ambiguity
+plotmod(model3,
+        tse,
+        ta,
+        x_label = "Temporal Self-Efficacy",
+        w_label = "Temporal Ambiguity",
+        y_label = "Time Pressure")
+
+
+# Moderation analysis 
+# original model
+model3 <- lm(tp ~ sex.x + age.x + job_hour + block + tse + cc*tse + ta*tse, data = df)
+summary(model3)
+mean_cc <- mean(df$cc) 
+sd_cc <- sd(df$cc)
+mean_ta <- mean(df$ta)
+sd_ta <- sd(df$ta)
+
+mean_cc + sd_cc
+df$high_cc <- ifelse(df$cc > mean_cc + sd_cc, 1, 0)
+df$low_cc <- ifelse(df$cc < mean_cc - sd_cc, 1, 0)
+df$high_ta <- ifelse(df$ta > mean_ta + sd_ta, 1, 0)
+df$low_ta <- ifelse(df$ta < mean_ta - sd_cc, 1, 0)
+
+modelcch <- lm(tp ~ sex.x + age.x + job_hour + block + tse + high_cc*tse + ta*tse, data = df)
+summary(modelcch)
+modelccl <- lm(tp ~ sex.x + age.x + job_hour + block + tse + low_cc*tse + ta*tse, data = df)
+summary(modelccl)
+# only high is significant and low is not 
+
+
+modeltah <- lm(tp ~ sex.x + age.x + job_hour + block + tse + cc*tse + high_ta*tse, data = df)
+summary(modeltah)
+modeltal <- lm(tp ~ sex.x + age.x + job_hour + block + tse + cc*tse + low_ta*tse, data = df)
+summary(modeltal)
+# both are significant 
+```
+
+```{r Moderation Plotting V2}
+
+# Doesn't make a whole lot of sense 
+# moderation plot 
+max(df$tse)
+min(df$tse)
+median(df$tse)
+
+
+df$tsecut <- cut(df$tse,
+                   breaks=c(5, 2, 4),
+                   labels=c('Low', 'High'))
+
+
+max(df$ta)
+min(df$ta)
+median(df$ta)
+df$tacat <- cut(df$ta,
+                        breaks=c(1, 3, 5),
+                        labels=c('Low', 'High'))
+
+plot1 <- interaction.plot(x.factor = df$tsecut,
+                 trace.factor = df$tacat,
+                 response = df$tp,
+                 fun = median,
+                 ylab = "Time Pressure",
+                 xlab = "Temporal Self-efficacy",
+                 col = c("pink", "blue"),
+                 lty = 1,
+                 lwd = 1,
+                 trace.label = "Temporal Ambiguity")
+
+max(df$cc)
+min(df$cc)
+median(df$cc)
+df$cccat <- cut(df$cc,
+                        breaks=c(1, 3, 5),
+                        labels=c('Low', 'High'))
+
+plot2 <- interaction.plot(x.factor = df$tsecut,
+                 trace.factor = df$cccat,
+                 response = df$tp,
+                 fun = median,
+                 ylab = "Time Pressure",
+                 xlab = "Temporal Self-efficacy",
+                 col = c("pink", "blue"),
+                 lty = 1,
+                 lwd = 1,
+                 trace.label = "Coordinative Complexity")
+
+```
+
